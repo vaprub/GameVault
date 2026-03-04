@@ -1,354 +1,189 @@
 # gui/main_window.py
+from PyQt6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem,
+    QPushButton, QHBoxLayout, QMessageBox, QInputDialog, QLineEdit, QTextEdit
+)
+from PyQt6.QtCore import QTimer, Qt, QEvent
 import logging
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                            QPushButton, QTableWidget, QTableWidgetItem,
-                            QHeaderView, QMessageBox, QLineEdit, QLabel,
-                            QMenuBar, QMenu, QStatusBar)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QFont, QColor
-from .add_account import AddAccountDialog
-from .settings import SettingsDialog
-from .backups import BackupsDialog
-from .cloud_backups import CloudBackupsDialog
+import secrets
+import string
 
-logger = logging.getLogger('GameVault.GUI.Main')
+logger = logging.getLogger('GameVault.MainWindow')
+
 
 class MainWindow(QMainWindow):
-    """Главное окно программы"""
-    
     def __init__(self, database, config):
         super().__init__()
         self.database = database
         self.config = config
-        self.init_ui()
-        self.load_accounts()
-        logger.info("Главное окно инициализировано")
-        
-    def init_ui(self):
-        self.setWindowTitle("GameVault - Менеджер игровых аккаунтов")
-        self.setMinimumSize(1000, 600)
-        
-        # Стили
-        self.setStyleSheet("""
-            QMainWindow {
-                background-color: #1e1e1e;
-            }
-            QTableWidget {
-                background-color: #2b2b2b;
-                alternate-background-color: #333333;
-                color: #ffffff;
-                gridline-color: #3c3c3c;
-                selection-background-color: #0078d4;
-            }
-            QTableWidget::item {
-                padding: 5px;
-            }
-            QHeaderView::section {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                padding: 8px;
-                border: none;
-                font-weight: bold;
-            }
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                border: none;
-                padding: 8px 15px;
-                border-radius: 4px;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background-color: #005a9e;
-            }
-            QPushButton#danger {
-                background-color: #d32f2f;
-            }
-            QPushButton#danger:hover {
-                background-color: #b71c1c;
-            }
-            QLineEdit {
-                padding: 8px;
-                border: 2px solid #3c3c3c;
-                border-radius: 4px;
-                background-color: #2b2b2b;
-                color: #ffffff;
-            }
-            QLineEdit:focus {
-                border: 2px solid #0078d4;
-            }
-            QStatusBar {
-                background-color: #2b2b2b;
-                color: #888888;
-            }
-            QMenuBar {
-                background-color: #2b2b2b;
-                color: #ffffff;
-            }
-            QMenuBar::item:selected {
-                background-color: #3c3c3c;
-            }
-            QMenu {
-                background-color: #2b2b2b;
-                color: #ffffff;
-                border: 1px solid #3c3c3c;
-            }
-            QMenu::item:selected {
-                background-color: #0078d4;
-            }
-        """)
-        
-        # Центральный виджет
+        self.setWindowTitle("GameVault")
+        self.setGeometry(100, 100, 800, 600)
+
+        # Таймер автоблокировки (5 минут)
+        self.inactivity_timer = QTimer()
+        self.inactivity_timer.setInterval(5 * 60 * 1000)
+        self.inactivity_timer.timeout.connect(self.lock)
+        self.inactivity_timer.start()
+
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
-        layout.setSpacing(10)
-        layout.setContentsMargins(10, 10, 10, 10)
-        
-        # Верхняя панель
-        top_panel = QHBoxLayout()
-        
-        # Поиск
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("🔍 Поиск по игре или логину...")
-        self.search_input.textChanged.connect(self.search_accounts)
-        top_panel.addWidget(self.search_input)
-        
-        # Кнопки
-        self.add_btn = QPushButton("➕ Добавить аккаунт")
-        self.add_btn.clicked.connect(self.add_account)
-        top_panel.addWidget(self.add_btn)
-        
-        self.backup_btn = QPushButton("💾 Бэкапы")
-        self.backup_btn.clicked.connect(self.show_backups)
-        top_panel.addWidget(self.backup_btn)
-        
-        self.cloud_btn = QPushButton("☁️ Облако")
-        self.cloud_btn.clicked.connect(self.show_cloud)
-        top_panel.addWidget(self.cloud_btn)
-        
-        self.settings_btn = QPushButton("⚙️ Настройки")
-        self.settings_btn.clicked.connect(self.show_settings)
-        top_panel.addWidget(self.settings_btn)
-        
-        layout.addLayout(top_panel)
-        
-        # Статистика
-        self.stats_label = QLabel()
-        self.stats_label.setStyleSheet("color: #888888; padding: 5px;")
-        layout.addWidget(self.stats_label)
-        
+
         # Таблица аккаунтов
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["ID", "Игра", "Логин", "Пароль", "Почта", "Действия"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.setAlternatingRowColors(True)
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["Название", "Email", "Пароль", "Заметка"])
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.verticalHeader().setVisible(False)
         layout.addWidget(self.table)
-        
-        # Меню
-        self.create_menu()
-        
-        # Статус бар
-        self.statusBar().showMessage("Готово")
-        
-    def create_menu(self):
-        menubar = self.menuBar()
-        
-        # Файл
-        file_menu = menubar.addMenu("Файл")
-        
-        backup_action = QAction("Создать бэкап", self)
-        backup_action.triggered.connect(self.create_backup)
-        file_menu.addAction(backup_action)
-        
-        cloud_action = QAction("Облачное хранилище", self)
-        cloud_action.triggered.connect(self.show_cloud)
-        file_menu.addAction(cloud_action)
-        
-        file_menu.addSeparator()
-        
-        exit_action = QAction("Выход", self)
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-        
-        # Аккаунты
-        accounts_menu = menubar.addMenu("Аккаунты")
-        
-        add_action = QAction("Добавить", self)
-        add_action.triggered.connect(self.add_account)
-        accounts_menu.addAction(add_action)
-        
-        refresh_action = QAction("Обновить", self)
-        refresh_action.triggered.connect(self.load_accounts)
-        accounts_menu.addAction(refresh_action)
-        
-        # Помощь
-        help_menu = menubar.addMenu("Помощь")
-        
-        about_action = QAction("О программе", self)
-        about_action.triggered.connect(self.show_about)
-        help_menu.addAction(about_action)
-        
-    def load_accounts(self):
-        """Загрузка аккаунтов в таблицу"""
-        self.table.setRowCount(0)
-        
-        if not self.database.data:
-            self.stats_label.setText("📊 Всего аккаунтов: 0")
-            return
-        
-        sorted_accounts = sorted(
-            self.database.data.items(),
-            key=lambda x: x[1].get('game', '').lower()
-        )
-        
-        for row, (acc_id, acc) in enumerate(sorted_accounts):
-            self.table.insertRow(row)
-            
-            # ID
-            self.table.setItem(row, 0, QTableWidgetItem(acc_id))
-            
-            # Игра
-            self.table.setItem(row, 1, QTableWidgetItem(acc.get('game', '')))
-            
-            # Логин
-            self.table.setItem(row, 2, QTableWidgetItem(acc.get('login', '')))
-            
-            # Пароль
-            password_item = QTableWidgetItem(acc.get('password', ''))
-            password_item.setForeground(QColor("#0078d4"))
-            self.table.setItem(row, 3, password_item)
-            
-            # Почта
-            email = acc.get('email', '')
-            if email:
-                email_item = QTableWidgetItem(f"{email}\n({acc.get('email_password', '***')})")
-            else:
-                email_item = QTableWidgetItem("")
-            self.table.setItem(row, 4, email_item)
-            
-            # Кнопки действий
-            actions_widget = QWidget()
-            actions_layout = QHBoxLayout(actions_widget)
-            actions_layout.setContentsMargins(2, 2, 2, 2)
-            
-            edit_btn = QPushButton("✏️")
-            edit_btn.setFixedSize(30, 30)
-            edit_btn.setToolTip("Редактировать")
-            edit_btn.clicked.connect(lambda checked, a=acc_id: self.edit_account(a))
-            
-            delete_btn = QPushButton("🗑️")
-            delete_btn.setFixedSize(30, 30)
-            delete_btn.setObjectName("danger")
-            delete_btn.setToolTip("Удалить")
-            delete_btn.clicked.connect(lambda checked, a=acc_id: self.delete_account(a))
-            
-            actions_layout.addWidget(edit_btn)
-            actions_layout.addWidget(delete_btn)
-            actions_layout.addStretch()
-            
-            self.table.setCellWidget(row, 5, actions_widget)
-        
-        self.stats_label.setText(f"📊 Всего аккаунтов: {len(self.database.data)}")
-        logger.debug(f"Загружено {len(self.database.data)} аккаунтов")
-        
-    def search_accounts(self):
-        """Поиск аккаунтов"""
-        query = self.search_input.text()
-        if not query:
-            self.load_accounts()
-            return
-        
-        results = self.database.search_accounts(query)
-        
-        self.table.setRowCount(0)
-        for row, (acc_id, acc) in enumerate(results):
-            self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(acc_id))
-            self.table.setItem(row, 1, QTableWidgetItem(acc.get('game', '')))
-            self.table.setItem(row, 2, QTableWidgetItem(acc.get('login', '')))
-            self.table.setItem(row, 3, QTableWidgetItem(acc.get('password', '')))
-            
-            email = acc.get('email', '')
-            if email:
-                self.table.setItem(row, 4, QTableWidgetItem(f"{email}"))
-            else:
-                self.table.setItem(row, 4, QTableWidgetItem(""))
-        
-        self.stats_label.setText(f"📊 Найдено: {len(results)}")
-        logger.debug(f"Поиск '{query}': найдено {len(results)}")
-        
+
+        # Кнопки
+        btn_layout = QHBoxLayout()
+        add_btn = QPushButton("Добавить")
+        add_btn.clicked.connect(self.add_account)
+        btn_layout.addWidget(add_btn)
+
+        generate_btn = QPushButton("Сгенерировать пароль")
+        generate_btn.clicked.connect(self.generate_password)
+        btn_layout.addWidget(generate_btn)
+
+        delete_btn = QPushButton("Удалить выбранное")
+        delete_btn.clicked.connect(self.delete_selected)
+        btn_layout.addWidget(delete_btn)
+
+        refresh_btn = QPushButton("Обновить")
+        refresh_btn.clicked.connect(self.refresh_table)
+        btn_layout.addWidget(refresh_btn)
+
+        export_btn = QPushButton("Экспорт")
+        export_btn.clicked.connect(self.export_vault)
+        btn_layout.addWidget(export_btn)
+
+        import_btn = QPushButton("Импорт")
+        import_btn.clicked.connect(self.import_vault)
+        btn_layout.addWidget(import_btn)
+
+        layout.addLayout(btn_layout)
+
+        self.refresh_table()
+
+        # Устанавливаем фильтр событий для сброса таймера при любом взаимодействии
+        self.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        """Перехватываем события мыши и клавиатуры для сброса таймера."""
+        if event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.KeyPress, QEvent.Type.Wheel):
+            self.inactivity_timer.start()
+        return super().eventFilter(obj, event)
+
+    def refresh_table(self):
+        accounts = self.database.get_accounts()
+        self.table.setRowCount(len(accounts))
+        for i, acc in enumerate(accounts):
+            self.table.setItem(i, 0, QTableWidgetItem(acc['name']))
+            self.table.setItem(i, 1, QTableWidgetItem(acc['email']))
+            self.table.setItem(i, 2, QTableWidgetItem(acc['password']))
+            self.table.setItem(i, 3, QTableWidgetItem(acc.get('note', '')))
+
     def add_account(self):
-        """Добавление нового аккаунта"""
-        dialog = AddAccountDialog(self)
-        if dialog.exec():
-            account = dialog.get_account()
-            self.database.add_account(account)
-            self.load_accounts()
-            self.statusBar().showMessage("✅ Аккаунт добавлен")
-            logger.info(f"Добавлен аккаунт: {account.get('game')}")
-    
-    def edit_account(self, account_id):
-        """Редактирование аккаунта"""
-        account = self.database.data.get(account_id, {})
-        dialog = AddAccountDialog(self, account)
-        if dialog.exec():
-            updated = dialog.get_account()
-            self.database.update_account(account_id, updated)
-            self.load_accounts()
-            self.statusBar().showMessage("✅ Аккаунт обновлен")
-            logger.info(f"Обновлен аккаунт ID: {account_id}")
-    
-    def delete_account(self, account_id):
-        """Удаление аккаунта"""
-        reply = QMessageBox.question(
-            self, "Подтверждение",
-            "Вы уверены, что хотите удалить этот аккаунт?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        
+        """Диалог добавления новой записи."""
+        name, ok1 = QInputDialog.getText(self, "Добавить запись", "Название:")
+        if not ok1 or not name:
+            return
+        email, ok2 = QInputDialog.getText(self, "Добавить запись", "Email:")
+        if not ok2:
+            return
+        password, ok3 = QInputDialog.getText(self, "Добавить запись", "Пароль:", QLineEdit.EchoMode.Password)
+        if not ok3:
+            return
+        note, ok4 = QInputDialog.getMultiLineText(self, "Добавить запись", "Заметка (необязательно):")
+        if not ok4:
+            note = ""
+
+        self.database.add_account(name, email, password, note)
+        self.refresh_table()
+        logger.info(f"Added account: {name}")
+
+    def generate_password(self):
+        """Генератор надёжного пароля."""
+        length = 16
+        alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+        password = ''.join(secrets.choice(alphabet) for _ in range(length))
+        # Показываем пароль в сообщении
+        QMessageBox.information(self, "Сгенерированный пароль",
+                                f"Новый пароль:
+{password}
+
+Скопируйте его в буфер обмена.")
+        # Можно также вставить в поле пароля при добавлении, но для простоты просто показываем
+
+    def delete_selected(self):
+        """Удаляет выбранную запись."""
+        current_row = self.table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "Удаление", "Выберите запись для удаления.")
+            return
+
+        # Подтверждение
+        reply = QMessageBox.question(self, "Подтверждение", "Удалить выбранную запись?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
-            self.database.delete_account(account_id)
-            self.load_accounts()
-            self.statusBar().showMessage("🗑️ Аккаунт удален")
-            logger.info(f"Удален аккаунт ID: {account_id}")
-    
-    def show_backups(self):
-        """Показать окно управления бэкапами"""
-        dialog = BackupsDialog(self.database, self)
-        if dialog.exec():
-            self.load_accounts()
-    
-    def show_cloud(self):
-        """Показать облачное хранилище"""
-        dialog = CloudBackupsDialog(self.database, self.config, self)
-        dialog.exec()
-    
-    def show_settings(self):
-        """Показать окно настроек"""
-        dialog = SettingsDialog(self.database, self.config, self)
-        if dialog.exec():
-            self.config = dialog.get_config()
-    
-    def create_backup(self):
-        """Создать бэкап"""
-        backup_file = self.database.create_backup()
-        if backup_file:
-            self.statusBar().showMessage(f"✅ Бэкап создан: {backup_file}")
-            logger.info(f"Бэкап создан: {backup_file}")
-        else:
-            self.statusBar().showMessage("❌ Ошибка создания бэкапа")
-            logger.error("Ошибка создания бэкапа")
-    
-    def show_about(self):
-        """О программе"""
-        QMessageBox.about(
-            self, "О программе",
-            "🎮 GameVault v1.0\n\n"
-            "Безопасный менеджер игровых аккаунтов\n"
-            "С шифрованием AES-256 и облачным хранением\n\n"
-            "© 2024 GameVault"
-        )
+            del self.database.accounts[current_row]
+            self.database.save()
+            self.refresh_table()
+            logger.info("Deleted selected account.")
+
+    def export_vault(self):
+        """Экспорт данных (сохраняет незашифрованную копию – осторожно!)."""
+        # В реальном проекте нужно шифровать резервную копию отдельным паролем.
+        # Здесь для простоты просто сохраняем открытый JSON.
+        from PyQt6.QtWidgets import QFileDialog
+        filename, _ = QFileDialog.getSaveFileName(self, "Сохранить резервную копию", "",
+                                                  "JSON Files (*.json)")
+        if filename:
+            import json
+            try:
+                with open(filename, 'w', encoding='utf-8') as f:
+                    json.dump(self.database.accounts, f, ensure_ascii=False, indent=2)
+                QMessageBox.information(self, "Экспорт", "Резервная копия сохранена.")
+                logger.info(f"Exported vault to {filename}")
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить: {e}")
+
+    def import_vault(self):
+        """Импорт данных из резервной копии (заменяет текущие данные)."""
+        from PyQt6.QtWidgets import QFileDialog
+        filename, _ = QFileDialog.getOpenFileName(self, "Выбрать резервную копию", "",
+                                                  "JSON Files (*.json)")
+        if filename:
+            import json
+            try:
+                with open(filename, 'r', encoding='utf-8') as f:
+                    imported = json.load(f)
+                # Простая проверка структуры
+                if not isinstance(imported, list):
+                    raise ValueError("Неверный формат файла: ожидается список записей.")
+                reply = QMessageBox.question(self, "Подтверждение",
+                                             "Импорт заменит все текущие записи. Продолжить?",
+                                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                if reply == QMessageBox.StandardButton.Yes:
+                    self.database.accounts = imported
+                    self.database.save()
+                    self.refresh_table()
+                    logger.info(f"Imported vault from {filename}")
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка", f"Не удалось импортировать: {e}")
+
+    def lock(self):
+        """Блокировка приложения (очистка памяти и закрытие окна)."""
+        logger.info("Locking due to inactivity.")
+        # Очищаем данные в памяти
+        self.database.clear_memory()
+        # Очищаем таблицу
+        self.table.setRowCount(0)
+        # Закрываем окно
+        self.close()
+
+    def closeEvent(self, event):
+        """При закрытии окна тоже очищаем память."""
+        self.database.clear_memory()
+        event.accept()

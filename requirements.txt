@@ -1,3 +1,4 @@
-PyQt6>=6.5.0
-cryptography>=41.0.0
-pyinstaller>=6.0.0
+# Зависимости GameVault
+# Зафиксированные версии для стабильности
+PyQt6==6.6.1
+cryptography==42.0.5
