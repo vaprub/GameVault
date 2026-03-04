@@ -1,0 +1,354 @@
+# gui/main_window.py
+import logging
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                            QPushButton, QTableWidget, QTableWidgetItem,
+                            QHeaderView, QMessageBox, QLineEdit, QLabel,
+                            QMenuBar, QMenu, QStatusBar)
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QFont, QColor
+from .add_account import AddAccountDialog
+from .settings import SettingsDialog
+from .backups import BackupsDialog
+from .cloud_backups import CloudBackupsDialog
+
+logger = logging.getLogger('GameVault.GUI.Main')
+
+class MainWindow(QMainWindow):
+    """Главное окно программы"""
+    
+    def __init__(self, database, config):
+        super().__init__()
+        self.database = database
+        self.config = config
+        self.init_ui()
+        self.load_accounts()
+        logger.info("Главное окно инициализировано")
+        
+    def init_ui(self):
+        self.setWindowTitle("GameVault - Менеджер игровых аккаунтов")
+        self.setMinimumSize(1000, 600)
+        
+        # Стили
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #1e1e1e;
+            }
+            QTableWidget {
+                background-color: #2b2b2b;
+                alternate-background-color: #333333;
+                color: #ffffff;
+                gridline-color: #3c3c3c;
+                selection-background-color: #0078d4;
+            }
+            QTableWidget::item {
+                padding: 5px;
+            }
+            QHeaderView::section {
+                background-color: #3c3c3c;
+                color: #ffffff;
+                padding: 8px;
+                border: none;
+                font-weight: bold;
+            }
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                border: none;
+                padding: 8px 15px;
+                border-radius: 4px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #005a9e;
+            }
+            QPushButton#danger {
+                background-color: #d32f2f;
+            }
+            QPushButton#danger:hover {
+                background-color: #b71c1c;
+            }
+            QLineEdit {
+                padding: 8px;
+                border: 2px solid #3c3c3c;
+                border-radius: 4px;
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QLineEdit:focus {
+                border: 2px solid #0078d4;
+            }
+            QStatusBar {
+                background-color: #2b2b2b;
+                color: #888888;
+            }
+            QMenuBar {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QMenuBar::item:selected {
+                background-color: #3c3c3c;
+            }
+            QMenu {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                border: 1px solid #3c3c3c;
+            }
+            QMenu::item:selected {
+                background-color: #0078d4;
+            }
+        """)
+        
+        # Центральный виджет
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
+        layout.setSpacing(10)
+        layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Верхняя панель
+        top_panel = QHBoxLayout()
+        
+        # Поиск
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("🔍 Поиск по игре или логину...")
+        self.search_input.textChanged.connect(self.search_accounts)
+        top_panel.addWidget(self.search_input)
+        
+        # Кнопки
+        self.add_btn = QPushButton("➕ Добавить аккаунт")
+        self.add_btn.clicked.connect(self.add_account)
+        top_panel.addWidget(self.add_btn)
+        
+        self.backup_btn = QPushButton("💾 Бэкапы")
+        self.backup_btn.clicked.connect(self.show_backups)
+        top_panel.addWidget(self.backup_btn)
+        
+        self.cloud_btn = QPushButton("☁️ Облако")
+        self.cloud_btn.clicked.connect(self.show_cloud)
+        top_panel.addWidget(self.cloud_btn)
+        
+        self.settings_btn = QPushButton("⚙️ Настройки")
+        self.settings_btn.clicked.connect(self.show_settings)
+        top_panel.addWidget(self.settings_btn)
+        
+        layout.addLayout(top_panel)
+        
+        # Статистика
+        self.stats_label = QLabel()
+        self.stats_label.setStyleSheet("color: #888888; padding: 5px;")
+        layout.addWidget(self.stats_label)
+        
+        # Таблица аккаунтов
+        self.table = QTableWidget()
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(["ID", "Игра", "Логин", "Пароль", "Почта", "Действия"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.setAlternatingRowColors(True)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.verticalHeader().setVisible(False)
+        layout.addWidget(self.table)
+        
+        # Меню
+        self.create_menu()
+        
+        # Статус бар
+        self.statusBar().showMessage("Готово")
+        
+    def create_menu(self):
+        menubar = self.menuBar()
+        
+        # Файл
+        file_menu = menubar.addMenu("Файл")
+        
+        backup_action = QAction("Создать бэкап", self)
+        backup_action.triggered.connect(self.create_backup)
+        file_menu.addAction(backup_action)
+        
+        cloud_action = QAction("Облачное хранилище", self)
+        cloud_action.triggered.connect(self.show_cloud)
+        file_menu.addAction(cloud_action)
+        
+        file_menu.addSeparator()
+        
+        exit_action = QAction("Выход", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        # Аккаунты
+        accounts_menu = menubar.addMenu("Аккаунты")
+        
+        add_action = QAction("Добавить", self)
+        add_action.triggered.connect(self.add_account)
+        accounts_menu.addAction(add_action)
+        
+        refresh_action = QAction("Обновить", self)
+        refresh_action.triggered.connect(self.load_accounts)
+        accounts_menu.addAction(refresh_action)
+        
+        # Помощь
+        help_menu = menubar.addMenu("Помощь")
+        
+        about_action = QAction("О программе", self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
+        
+    def load_accounts(self):
+        """Загрузка аккаунтов в таблицу"""
+        self.table.setRowCount(0)
+        
+        if not self.database.data:
+            self.stats_label.setText("📊 Всего аккаунтов: 0")
+            return
+        
+        sorted_accounts = sorted(
+            self.database.data.items(),
+            key=lambda x: x[1].get('game', '').lower()
+        )
+        
+        for row, (acc_id, acc) in enumerate(sorted_accounts):
+            self.table.insertRow(row)
+            
+            # ID
+            self.table.setItem(row, 0, QTableWidgetItem(acc_id))
+            
+            # Игра
+            self.table.setItem(row, 1, QTableWidgetItem(acc.get('game', '')))
+            
+            # Логин
+            self.table.setItem(row, 2, QTableWidgetItem(acc.get('login', '')))
+            
+            # Пароль
+            password_item = QTableWidgetItem(acc.get('password', ''))
+            password_item.setForeground(QColor("#0078d4"))
+            self.table.setItem(row, 3, password_item)
+            
+            # Почта
+            email = acc.get('email', '')
+            if email:
+                email_item = QTableWidgetItem(f"{email}\n({acc.get('email_password', '***')})")
+            else:
+                email_item = QTableWidgetItem("")
+            self.table.setItem(row, 4, email_item)
+            
+            # Кнопки действий
+            actions_widget = QWidget()
+            actions_layout = QHBoxLayout(actions_widget)
+            actions_layout.setContentsMargins(2, 2, 2, 2)
+            
+            edit_btn = QPushButton("✏️")
+            edit_btn.setFixedSize(30, 30)
+            edit_btn.setToolTip("Редактировать")
+            edit_btn.clicked.connect(lambda checked, a=acc_id: self.edit_account(a))
+            
+            delete_btn = QPushButton("🗑️")
+            delete_btn.setFixedSize(30, 30)
+            delete_btn.setObjectName("danger")
+            delete_btn.setToolTip("Удалить")
+            delete_btn.clicked.connect(lambda checked, a=acc_id: self.delete_account(a))
+            
+            actions_layout.addWidget(edit_btn)
+            actions_layout.addWidget(delete_btn)
+            actions_layout.addStretch()
+            
+            self.table.setCellWidget(row, 5, actions_widget)
+        
+        self.stats_label.setText(f"📊 Всего аккаунтов: {len(self.database.data)}")
+        logger.debug(f"Загружено {len(self.database.data)} аккаунтов")
+        
+    def search_accounts(self):
+        """Поиск аккаунтов"""
+        query = self.search_input.text()
+        if not query:
+            self.load_accounts()
+            return
+        
+        results = self.database.search_accounts(query)
+        
+        self.table.setRowCount(0)
+        for row, (acc_id, acc) in enumerate(results):
+            self.table.insertRow(row)
+            self.table.setItem(row, 0, QTableWidgetItem(acc_id))
+            self.table.setItem(row, 1, QTableWidgetItem(acc.get('game', '')))
+            self.table.setItem(row, 2, QTableWidgetItem(acc.get('login', '')))
+            self.table.setItem(row, 3, QTableWidgetItem(acc.get('password', '')))
+            
+            email = acc.get('email', '')
+            if email:
+                self.table.setItem(row, 4, QTableWidgetItem(f"{email}"))
+            else:
+                self.table.setItem(row, 4, QTableWidgetItem(""))
+        
+        self.stats_label.setText(f"📊 Найдено: {len(results)}")
+        logger.debug(f"Поиск '{query}': найдено {len(results)}")
+        
+    def add_account(self):
+        """Добавление нового аккаунта"""
+        dialog = AddAccountDialog(self)
+        if dialog.exec():
+            account = dialog.get_account()
+            self.database.add_account(account)
+            self.load_accounts()
+            self.statusBar().showMessage("✅ Аккаунт добавлен")
+            logger.info(f"Добавлен аккаунт: {account.get('game')}")
+    
+    def edit_account(self, account_id):
+        """Редактирование аккаунта"""
+        account = self.database.data.get(account_id, {})
+        dialog = AddAccountDialog(self, account)
+        if dialog.exec():
+            updated = dialog.get_account()
+            self.database.update_account(account_id, updated)
+            self.load_accounts()
+            self.statusBar().showMessage("✅ Аккаунт обновлен")
+            logger.info(f"Обновлен аккаунт ID: {account_id}")
+    
+    def delete_account(self, account_id):
+        """Удаление аккаунта"""
+        reply = QMessageBox.question(
+            self, "Подтверждение",
+            "Вы уверены, что хотите удалить этот аккаунт?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            self.database.delete_account(account_id)
+            self.load_accounts()
+            self.statusBar().showMessage("🗑️ Аккаунт удален")
+            logger.info(f"Удален аккаунт ID: {account_id}")
+    
+    def show_backups(self):
+        """Показать окно управления бэкапами"""
+        dialog = BackupsDialog(self.database, self)
+        if dialog.exec():
+            self.load_accounts()
+    
+    def show_cloud(self):
+        """Показать облачное хранилище"""
+        dialog = CloudBackupsDialog(self.database, self.config, self)
+        dialog.exec()
+    
+    def show_settings(self):
+        """Показать окно настроек"""
+        dialog = SettingsDialog(self.database, self.config, self)
+        if dialog.exec():
+            self.config = dialog.get_config()
+    
+    def create_backup(self):
+        """Создать бэкап"""
+        backup_file = self.database.create_backup()
+        if backup_file:
+            self.statusBar().showMessage(f"✅ Бэкап создан: {backup_file}")
+            logger.info(f"Бэкап создан: {backup_file}")
+        else:
+            self.statusBar().showMessage("❌ Ошибка создания бэкапа")
+            logger.error("Ошибка создания бэкапа")
+    
+    def show_about(self):
+        """О программе"""
+        QMessageBox.about(
+            self, "О программе",
+            "🎮 GameVault v1.0\n\n"
+            "Безопасный менеджер игровых аккаунтов\n"
+            "С шифрованием AES-256 и облачным хранением\n\n"
+            "© 2024 GameVault"
+        )

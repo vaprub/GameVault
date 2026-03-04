@@ -1,0 +1,407 @@
+# gui/cloud_backups.py
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+import logging
+                            QPushButton, QListWidget, QListWidgetItem,
+                            QMessageBox, QGroupBox, QTabWidget, QWidget,
+                            QLineEdit, QCheckBox, QComboBox)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+import os
+from core.cloud_storage import CloudStorage
+
+logger = logging.getLogger('GameVault.GUI.cloud_backups')
+class CloudWorker(QThread):
+    """Поток для работы с облаком"""
+    finished = pyqtSignal(bool, str, object)
+    
+    def __init__(self, func, *args):
+        super().__init__()
+        self.func = func
+        self.args = args
+        
+    def run(self):
+        try:
+            result = self.func(*self.args)
+            if isinstance(result, tuple):
+                if len(result) == 2:
+                    self.finished.emit(result[0], result[1], None)
+                else:
+                    self.finished.emit(result[0], result[1], result[2] if len(result) > 2 else None)
+            else:
+                self.finished.emit(True, "Готово", result)
+        except Exception as e:
+            self.finished.emit(False, str(e), None)
+
+class CloudBackupsDialog(QDialog):
+    """Диалог управления облачными бэкапами"""
+    
+    def __init__(self, database, config, parent=None):
+        super().__init__(parent)
+        self.database = database
+        self.config = config
+        self.cloud = CloudStorage(database.crypto)
+        self.current_backups = []
+        self.init_ui()
+        self.load_settings()
+        
+    def init_ui(self):
+        self.setWindowTitle("Облачное хранилище бэкапов")
+        self.setMinimumSize(700, 500)
+        
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Вкладки
+        tabs = QTabWidget()
+        
+        # Вкладка настроек
+        settings_widget = QWidget()
+        settings_layout = QVBoxLayout(settings_widget)
+        
+        # Email для облака
+        email_group = QGroupBox("📧 Настройки облака")
+        email_layout = QVBoxLayout()
+        
+        email_layout.addWidget(QLabel("Email для облачного хранения:"))
+        self.cloud_email = QLineEdit()
+        self.cloud_email.setPlaceholderText("email@example.com")
+        email_layout.addWidget(self.cloud_email)
+        
+        # Выбор сервиса
+        email_layout.addWidget(QLabel("Почтовый сервис:"))
+        self.cloud_service = QComboBox()
+        self.cloud_service.addItems([
+            "Автоопределение",
+            "Gmail",
+            "Yandex",
+            "Mail.ru",
+            "Rambler",
+            "Outlook",
+            "Yahoo"
+        ])
+        email_layout.addWidget(self.cloud_service)
+        
+        # Пароль
+        email_layout.addWidget(QLabel("Пароль от почты (специальный для внешних приложений):"))
+        self.cloud_password = QLineEdit()
+        self.cloud_password.setEchoMode(QLineEdit.EchoMode.Password)
+        email_layout.addWidget(self.cloud_password)
+        
+        # Сохранять пароль
+        self.save_password = QCheckBox("Сохранить пароль (будет зашифрован)")
+        self.save_password.setChecked(True)
+        email_layout.addWidget(self.save_password)
+        
+        # Папка в облаке
+        email_layout.addWidget(QLabel("Папка для бэкапов:"))
+        self.cloud_folder = QLineEdit("GameVault_Backups")
+        email_layout.addWidget(self.cloud_folder)
+        
+        # Автоматическая загрузка
+        self.auto_upload = QCheckBox("Автоматически загружать новые бэкапы в облако")
+        email_layout.addWidget(self.auto_upload)
+        
+        email_group.setLayout(email_layout)
+        settings_layout.addWidget(email_group)
+        
+        # Кнопки для проверки
+        test_btn = QPushButton("🔄 Проверить подключение")
+        test_btn.clicked.connect(self.test_connection)
+        settings_layout.addWidget(test_btn)
+        
+        save_btn = QPushButton("💾 Сохранить настройки")
+        save_btn.clicked.connect(self.save_cloud_settings)
+        settings_layout.addWidget(save_btn)
+        
+        settings_layout.addStretch()
+        
+        # Вкладка управления
+        manage_widget = QWidget()
+        manage_layout = QVBoxLayout(manage_widget)
+        
+        # Кнопки управления
+        btn_layout = QHBoxLayout()
+        
+        self.refresh_btn = QPushButton("🔄 Обновить список")
+        self.refresh_btn.clicked.connect(self.refresh_backups)
+        btn_layout.addWidget(self.refresh_btn)
+        
+        self.upload_btn = QPushButton("📤 Загрузить текущий бэкап")
+        self.upload_btn.clicked.connect(self.upload_current)
+        btn_layout.addWidget(self.upload_btn)
+        
+        self.download_btn = QPushButton("📥 Скачать выбранный")
+        self.download_btn.clicked.connect(self.download_selected)
+        btn_layout.addWidget(self.download_btn)
+        
+        self.delete_btn = QPushButton("🗑️ Удалить выбранный")
+        self.delete_btn.clicked.connect(self.delete_selected)
+        btn_layout.addWidget(self.delete_btn)
+        
+        manage_layout.addLayout(btn_layout)
+        
+        # Список бэкапов
+        list_group = QGroupBox("📋 Бэкапы в облаке")
+        list_layout = QVBoxLayout()
+        
+        self.cloud_list = QListWidget()
+        self.cloud_list.itemDoubleClicked.connect(self.download_selected)
+        list_layout.addWidget(self.cloud_list)
+        
+        list_group.setLayout(list_layout)
+        manage_layout.addWidget(list_group)
+        
+        # Добавляем вкладки
+        tabs.addTab(settings_widget, "⚙️ Настройки")
+        tabs.addTab(manage_widget, "☁️ Облачные бэкапы")
+        
+        layout.addWidget(tabs)
+        
+        # Кнопка закрытия
+        close_btn = QPushButton("Закрыть")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+        
+        self.setLayout(layout)
+        
+    def load_settings(self):
+        """Загрузка настроек из конфига"""
+        cloud_config = self.config.get('cloud', {})
+        self.cloud_email.setText(cloud_config.get('email', ''))
+        self.cloud_folder.setText(cloud_config.get('folder', 'GameVault_Backups'))
+        self.auto_upload.setChecked(cloud_config.get('auto_upload', False))
+        
+        # Загружаем пароль если есть
+        if 'password' in cloud_config:
+            password = self.database.crypto.decrypt_password(cloud_config['password'])
+            if password:
+                self.cloud_password.setText(password)
+    
+    def save_cloud_settings(self):
+        """Сохранение настроек облака"""
+        cloud_config = {
+            'email': self.cloud_email.text().strip(),
+            'folder': self.cloud_folder.text().strip(),
+            'auto_upload': self.auto_upload.isChecked()
+        }
+        
+        # Сохраняем пароль если нужно
+        password = self.cloud_password.text()
+        if password and self.save_password.isChecked():
+            encrypted = self.database.crypto.encrypt_password(password)
+            if encrypted:
+                cloud_config['password'] = encrypted
+        
+        self.config['cloud'] = cloud_config
+        self.database.save_config()
+        
+        QMessageBox.information(self, "Успех", "Настройки сохранены")
+    
+    def test_connection(self):
+        """Проверка подключения к облаку"""
+        email = self.cloud_email.text().strip()
+        password = self.cloud_password.text()
+        folder = self.cloud_folder.text().strip()
+        
+        if not email or not password:
+            QMessageBox.warning(self, "Ошибка", "Введите email и пароль")
+            return
+        
+        # Создаем тестовый бэкап
+        backup_file = self.database.create_backup()
+        if not backup_file:
+            QMessageBox.warning(self, "Ошибка", "Не удалось создать тестовый бэкап")
+            return
+        
+        self.worker = CloudWorker(self.cloud.upload_backup, email, password, 
+                                  backup_file, folder)
+        self.worker.finished.connect(self.on_connection_tested)
+        self.worker.start()
+        
+        self.refresh_btn.setEnabled(False)
+        self.upload_btn.setText("⏳ Проверка...")
+    
+    def on_connection_tested(self, success, message, data):
+        """Обработка результата проверки"""
+        self.refresh_btn.setEnabled(True)
+        self.upload_btn.setText("📤 Загрузить текущий бэкап")
+        
+        if success:
+            QMessageBox.information(self, "Успех", "Подключение работает!")
+        else:
+            QMessageBox.warning(self, "Ошибка", f"Не удалось подключиться: {message}")
+    
+    def refresh_backups(self):
+        """Обновление списка бэкапов"""
+        email = self.cloud_email.text().strip()
+        password = self.cloud_password.text()
+        folder = self.cloud_folder.text().strip()
+        
+        if not email or not password:
+            QMessageBox.warning(self, "Ошибка", "Введите email и пароль")
+            return
+        
+        self.worker = CloudWorker(self.cloud.list_backups, email, password, folder)
+        self.worker.finished.connect(self.on_backups_loaded)
+        self.worker.start()
+        
+        self.cloud_list.clear()
+        self.cloud_list.addItem("⏳ Загрузка списка...")
+        self.refresh_btn.setEnabled(False)
+    
+    def on_backups_loaded(self, success, message, backups):
+        """Обработка загрузки списка"""
+        self.refresh_btn.setEnabled(True)
+        self.cloud_list.clear()
+        
+        if success:
+            # Проверяем что backups - это список
+            if isinstance(backups, list) and backups:
+                self.current_backups = backups
+                for backup in backups:
+                    display_text = f"{backup.get('date', 'Неизвестно')} - {backup.get('subject', 'Без темы')}"
+                    item = QListWidgetItem(display_text)
+                    item.setData(Qt.ItemDataRole.UserRole, backup.get('id', ''))
+                    self.cloud_list.addItem(item)
+            else:
+                self.cloud_list.addItem("📭 Нет бэкапов в облаке")
+        else:
+            # message - это строка с ошибкой
+            error_text = f"❌ Ошибка: {message}" if message else "❌ Неизвестная ошибка"
+            self.cloud_list.addItem(error_text)
+            QMessageBox.warning(self, "Ошибка", message if message else "Не удалось получить список бэкапов")
+    
+    def upload_current(self):
+        """Загрузка текущего бэкапа в облако"""
+        email = self.cloud_email.text().strip()
+        password = self.cloud_password.text()
+        folder = self.cloud_folder.text().strip()
+        
+        if not email or not password:
+            QMessageBox.warning(self, "Ошибка", "Введите email и пароль")
+            return
+        
+        # Создаем бэкап
+        backup_file = self.database.create_backup()
+        if not backup_file:
+            QMessageBox.warning(self, "Ошибка", "Не удалось создать бэкап")
+            return
+        
+        self.worker = CloudWorker(self.cloud.upload_backup, email, password, 
+                                  backup_file, folder)
+        self.worker.finished.connect(self.on_uploaded)
+        self.worker.start()
+        
+        self.upload_btn.setEnabled(False)
+        self.upload_btn.setText("⏳ Загрузка...")
+    
+    def on_uploaded(self, success, message, data):
+        """Обработка загрузки"""
+        self.upload_btn.setEnabled(True)
+        self.upload_btn.setText("📤 Загрузить текущий бэкап")
+        
+        if success:
+            QMessageBox.information(self, "Успех", "Бэкап загружен в облако!")
+            self.refresh_backups()
+        else:
+            QMessageBox.warning(self, "Ошибка", f"Не удалось загрузить: {message}")
+    
+    def download_selected(self):
+        """Скачивание выбранного бэкапа"""
+        current = self.cloud_list.currentItem()
+        if not current:
+            QMessageBox.warning(self, "Ошибка", "Выберите бэкап")
+            return
+        
+        backup_id = current.data(Qt.ItemDataRole.UserRole)
+        if not backup_id:
+            QMessageBox.warning(self, "Ошибка", "Не удалось получить ID бэкапа")
+            return
+        
+        email = self.cloud_email.text().strip()
+        password = self.cloud_password.text()
+        folder = self.cloud_folder.text().strip()
+        
+        if not email or not password:
+            QMessageBox.warning(self, "Ошибка", "Введите email и пароль")
+            return
+        
+        self.worker = CloudWorker(self.cloud.download_backup, email, password, 
+                                  backup_id, folder)
+        self.worker.finished.connect(self.on_downloaded)
+        self.worker.start()
+        
+        self.download_btn.setEnabled(False)
+        self.download_btn.setText("⏳ Скачивание...")
+    
+    def on_downloaded(self, success, message, local_path):
+        """Обработка скачивания"""
+        self.download_btn.setEnabled(True)
+        self.download_btn.setText("📥 Скачать выбранный")
+        
+        if success and local_path:
+            reply = QMessageBox.question(
+                self, "Бэкап скачан",
+                f"Бэкап сохранен как:\n{local_path}\n\nВосстановить из него сейчас?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                # Восстанавливаем
+                if self.database.restore_backup(local_path):
+                    QMessageBox.information(
+                        self, "Успех",
+                        "Бэкап восстановлен!\nПерезапустите программу для применения изменений."
+                    )
+                    self.accept()
+                else:
+                    QMessageBox.warning(self, "Ошибка", "Не удалось восстановить бэкап")
+        else:
+            error_msg = message if message else "Неизвестная ошибка"
+            QMessageBox.warning(self, "Ошибка", f"Не удалось скачать: {error_msg}")
+    
+    def delete_selected(self):
+        """Удаление выбранного бэкапа из облака"""
+        current = self.cloud_list.currentItem()
+        if not current:
+            QMessageBox.warning(self, "Ошибка", "Выберите бэкап")
+            return
+        
+        backup_id = current.data(Qt.ItemDataRole.UserRole)
+        if not backup_id:
+            QMessageBox.warning(self, "Ошибка", "Не удалось получить ID бэкапа")
+            return
+        
+        reply = QMessageBox.question(
+            self, "Подтверждение",
+            "Удалить этот бэкап из облака?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            email = self.cloud_email.text().strip()
+            password = self.cloud_password.text()
+            folder = self.cloud_folder.text().strip()
+            
+            if not email or not password:
+                QMessageBox.warning(self, "Ошибка", "Введите email и пароль")
+                return
+            
+            self.worker = CloudWorker(self.cloud.delete_backup, email, password, 
+                                     backup_id, folder)
+            self.worker.finished.connect(self.on_deleted)
+            self.worker.start()
+            
+            self.delete_btn.setEnabled(False)
+            self.delete_btn.setText("⏳ Удаление...")
+    
+    def on_deleted(self, success, message, data):
+        """Обработка удаления"""
+        self.delete_btn.setEnabled(True)
+        self.delete_btn.setText("🗑️ Удалить выбранный")
+        
+        if success:
+            QMessageBox.information(self, "Успех", "Бэкап удален из облака")
+            self.refresh_backups()
+        else:
+            QMessageBox.warning(self, "Ошибка", f"Не удалось удалить: {message}")
