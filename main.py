@@ -6,6 +6,33 @@ GameVault - Менеджер игровых аккаунтов
 Главный файл запуска
 """
 
+import os
+import sys
+import pkgutil
+
+# ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА DLL ДЛЯ QT
+if hasattr(sys, '_MEIPASS'):
+    # Путь к DLL внутри собранного EXE
+    dll_path = os.path.join(sys._MEIPASS, 'PyQt6', 'Qt6', 'bin')
+    if os.path.exists(dll_path):
+        os.environ['PATH'] = dll_path + os.pathsep + os.environ['PATH']
+        try:
+            os.add_dll_directory(dll_path)
+        except AttributeError:
+            pass
+    print(f"DEBUG: DLL path added: {dll_path}")
+
+# Для обычного запуска через Python
+else:
+    # Добавляем стандартный путь к DLL PyQt6
+    import site
+    for path in site.getsitepackages():
+        qt_bin = os.path.join(path, 'PyQt6', 'Qt6', 'bin')
+        if os.path.exists(qt_bin):
+            os.environ['PATH'] = qt_bin + os.pathsep + os.environ['PATH']
+            print(f"DEBUG: Added {qt_bin} to PATH")
+            break
+
 import sys
 import os
 from PyQt6.QtWidgets import QApplication

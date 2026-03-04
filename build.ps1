@@ -185,6 +185,7 @@ $pyinstallerArgs = @(
     "--onefile",
     "--name", "GameVault",
     "--windowed",
+    "--collect-all", "PyQt6",
     "--distpath", ".",
     "--workpath", "build",
     "--specpath", ".",
