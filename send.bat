@@ -1,12 +1,22 @@
 @echo off
 echo ========================================
-echo    GameVault - Send to GitHub
+echo    GameVault - Push to GitHub
 echo ========================================
 echo.
 
-:: Настройка пользователя
-git config user.email "vaprub@mail.ru"
-git config user.name "vaprub"
+:: Проверяем текущую ветку
+git branch --show-current > branch.txt
+set /p BRANCH=<branch.txt
+del branch.txt
+
+if "%BRANCH%"=="" (
+    echo Error: Cannot determine current branch
+    pause
+    exit /b 1
+)
+
+echo Current branch: %BRANCH%
+echo.
 
 :: Добавляем файлы
 echo Adding files...
@@ -19,15 +29,14 @@ if %errorlevel% neq 0 (
 echo OK
 echo.
 
-:: Запрашиваем комментарий
-:get_msg
-set /p msg="Enter commit message: "
+:: Коммит
+set /p msg="Commit message: "
 if "%msg%"=="" (
     echo Message cannot be empty!
-    goto get_msg
+    pause
+    exit /b 1
 )
 
-:: Создаем коммит
 git commit -m "%msg%"
 if %errorlevel% neq 0 (
     echo Error creating commit
@@ -37,24 +46,11 @@ if %errorlevel% neq 0 (
 echo OK
 echo.
 
-:: Определяем ветку (main или master)
-git branch --show-current > branch.txt
-set /p BRANCH=<branch.txt
-del branch.txt
-
-if "%BRANCH%"=="" (
-    :: Если ветка не определена, пробуем main
-    set BRANCH=main
-)
-
-echo Current branch: %BRANCH%
-echo.
-
-:: Отправляем
-echo Pushing to GitHub (branch: %BRANCH%)...
-git push -u origin %BRANCH%
+:: Пуш (используем текущую ветку)
+echo Pushing to GitHub...
+git push origin %BRANCH%
 if %errorlevel% neq 0 (
-    echo Error pushing to GitHub
+    echo Error pushing
     pause
     exit /b 1
 )
