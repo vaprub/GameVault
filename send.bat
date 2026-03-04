@@ -19,7 +19,7 @@ if %errorlevel% neq 0 (
 echo OK
 echo.
 
-:: Запрашиваем комментарий (с проверкой)
+:: Запрашиваем комментарий
 :get_msg
 set /p msg="Enter commit message: "
 if "%msg%"=="" (
@@ -37,9 +37,22 @@ if %errorlevel% neq 0 (
 echo OK
 echo.
 
+:: Определяем ветку (main или master)
+git branch --show-current > branch.txt
+set /p BRANCH=<branch.txt
+del branch.txt
+
+if "%BRANCH%"=="" (
+    :: Если ветка не определена, пробуем main
+    set BRANCH=main
+)
+
+echo Current branch: %BRANCH%
+echo.
+
 :: Отправляем
-echo Pushing to GitHub...
-git push origin main
+echo Pushing to GitHub (branch: %BRANCH%)...
+git push -u origin %BRANCH%
 if %errorlevel% neq 0 (
     echo Error pushing to GitHub
     pause
