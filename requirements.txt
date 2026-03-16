@@ -1,4 +1,6 @@
-# Зависимости GameVault
-# Зафиксированные версии для стабильности
-PyQt6==6.6.1
-cryptography==42.0.5
+PyQt5==5.15.10
+cryptography>=41.0.0
+pyinstaller>=6.0.0
+requests>=2.31.0
+steam[client]>=1.2.0
+gevent-eventemitter>=0.2.0

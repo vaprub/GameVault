@@ -1,9 +1,9 @@
 # gui/backups.py
 import logging
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                             QPushButton, QListWidget, QListWidgetItem,
                             QMessageBox, QGroupBox)
-from PyQt6.QtCore import Qt
+from PyQt5.QtCore import Qt
 import os
 
 logger = logging.getLogger('GameVault.GUI.Backups')
@@ -73,7 +73,7 @@ class BackupsDialog(QDialog):
             for backup in backups:
                 text = f"{backup['date']} - {backup['size']} байт"
                 item = QListWidgetItem(text)
-                item.setData(Qt.ItemDataRole.UserRole, backup['path'])
+                item.setData(Qt.UserRole, backup['path'])
                 self.backup_list.addItem(item)
             self.restore_btn.setEnabled(True)
     
@@ -84,7 +84,7 @@ class BackupsDialog(QDialog):
             QMessageBox.warning(self, "Ошибка", "Выберите бэкап")
             return
         
-        backup_path = current.data(Qt.ItemDataRole.UserRole)
+        backup_path = current.data(Qt.UserRole)
         if not backup_path:
             return
         

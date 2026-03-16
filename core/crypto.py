@@ -78,3 +78,19 @@ class CryptoManager:
         if not self.fernet:
             raise Exception("Crypto not initialized.")
         return self.fernet.decrypt(token.encode()).decode()
+
+    def generate_password(self, length=16) -> str:
+        """Генерирует надёжный случайный пароль."""
+        import secrets
+        import string
+        alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+        return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+    def encrypt_password(self, password: str) -> str:
+        """Шифрует пароль (обёртка над encrypt)."""
+        return self.encrypt(password)
+
+    def decrypt_password(self, token: str) -> str:
+        """Расшифровывает пароль (обёртка над decrypt)."""
+        return self.decrypt(token)
+

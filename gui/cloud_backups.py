@@ -1,10 +1,10 @@
 # gui/cloud_backups.py
 import logging
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                             QPushButton, QListWidget, QListWidgetItem,
                             QMessageBox, QGroupBox, QTabWidget, QWidget,
                             QLineEdit, QCheckBox, QComboBox)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import os
 from core.cloud_storage import CloudStorage
 
@@ -261,7 +261,7 @@ class CloudBackupsDialog(QDialog):
                 for backup in backups:
                     display_text = f"{backup.get('date', 'Неизвестно')} - {backup.get('subject', 'Без темы')}"
                     item = QListWidgetItem(display_text)
-                    item.setData(Qt.ItemDataRole.UserRole, backup.get('id', ''))
+                    item.setData(Qt.UserRole, backup.get('id', ''))
                     self.cloud_list.addItem(item)
             else:
                 self.cloud_list.addItem("📭 Нет бэкапов в облаке")
@@ -312,7 +312,7 @@ class CloudBackupsDialog(QDialog):
             QMessageBox.warning(self, "Ошибка", "Выберите бэкап")
             return
         
-        backup_id = current.data(Qt.ItemDataRole.UserRole)
+        backup_id = current.data(Qt.UserRole)
         if not backup_id:
             QMessageBox.warning(self, "Ошибка", "Не удалось получить ID бэкапа")
             return
@@ -365,7 +365,7 @@ class CloudBackupsDialog(QDialog):
             QMessageBox.warning(self, "Ошибка", "Выберите бэкап")
             return
         
-        backup_id = current.data(Qt.ItemDataRole.UserRole)
+        backup_id = current.data(Qt.UserRole)
         if not backup_id:
             QMessageBox.warning(self, "Ошибка", "Не удалось получить ID бэкапа")
             return

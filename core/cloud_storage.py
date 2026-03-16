@@ -15,33 +15,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 # Настройка логирования
-def setup_logger():
-    """Настройка логгера для облачного хранилища"""
-    logger = logging.getLogger('GameVault.Cloud')
-    logger.setLevel(logging.DEBUG)
-    
-    # Создаем папку для логов если нет
-    if not os.path.exists('logs'):
-        os.makedirs('logs')
-    
-    # Файловый handler с ротацией (10 MB, 5 файлов)
-    file_handler = RotatingFileHandler(
-        'logs/cloud.log',
-        maxBytes=10*1024*1024,
-        backupCount=5,
-        encoding='utf-8'
-    )
-    file_handler.setLevel(logging.DEBUG)
-    
-    # Формат логов
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    file_handler.setFormatter(formatter)
-    
-    logger.addHandler(file_handler)
-    return logger
+# Логирование настроено глобально
 
 class CloudStorage:
     """Работа с облачными хранилищами через почту"""
@@ -67,7 +41,7 @@ class CloudStorage:
         self.crypto = crypto
         self.imap_server = None
         self.mail = None
-        self.logger = setup_logger()
+        self.logger = logging.getLogger('GameVault.Cloud')
         self.logger.info("CloudStorage инициализирован")
         
     def get_imap_server(self, email):
@@ -98,14 +72,14 @@ class CloudStorage:
             self.mail = imaplib.IMAP4_SSL(server)
             self.mail.login(email, password)
             self.logger.info("Успешное подключение к IMAP")
-            return True, "Подключено"
+            return True, "Подключено", None
             
         except imaplib.IMAP4.error as e:
             self.logger.error(f"Ошибка IMAP аутентификации: {str(e)}")
-            return False, f"Ошибка аутентификации: {str(e)}"
+            return False, f"Ошибка аутентификации: {str(e)}", None
         except Exception as e:
             self.logger.error(f"Ошибка подключения к IMAP: {str(e)}")
-            return False, str(e)
+            return False, str(e), None
     
     def disconnect(self):
         """Отключение от IMAP"""
@@ -124,14 +98,14 @@ class CloudStorage:
         
         if not os.path.exists(backup_file):
             self.logger.error(f"Файл бэкапа не найден: {backup_file}")
-            return False, f"Файл не найден: {backup_file}"
+            return False, f"Файл не найден: {backup_file}", None
         
         try:
             # Подключаемся
             success, msg = self.connect_imap(email, password)
             if not success:
                 self.logger.error(f"Ошибка подключения: {msg}")
-                return False, f"Ошибка подключения: {msg}"
+                return False, f"Ошибка подключения: {msg}", None
             
             # Создаем папку если нет
             try:
@@ -178,12 +152,12 @@ class CloudStorage:
             
             self.disconnect()
             self.logger.info("Бэкап успешно загружен в облако")
-            return True, "Бэкап загружен в облако"
+            return True, "Бэкап загружен в облако", None
             
         except Exception as e:
             self.logger.error(f"Ошибка при загрузке бэкапа: {str(e)}")
             self.disconnect()
-            return False, str(e)
+            return False, str(e), None
     
     def list_backups(self, email, password, folder='GameVault_Backups'):
         """Получение списка бэкапов из облака"""
@@ -193,7 +167,7 @@ class CloudStorage:
             success, msg = self.connect_imap(email, password)
             if not success:
                 self.logger.error(f"Ошибка подключения: {msg}")
-                return False, f"Ошибка подключения: {msg}"  # <-- ВОЗВРАЩАЕМ СТРОКУ, НЕ СПИСОК!
+                return False, f"Ошибка подключения: {msg}", None  # <-- ВОЗВРАЩАЕМ СТРОКУ, НЕ СПИСОК!
             
             # Переходим в папку
             try:
@@ -202,14 +176,14 @@ class CloudStorage:
             except Exception as e:
                 self.logger.error(f"Папка {folder} не найдена: {str(e)}")
                 self.disconnect()
-                return False, f"Папка {folder} не найдена"
+                return False, f"Папка {folder} не найдена", None
             
             # Ищем все письма
             result, data = self.mail.search(None, 'ALL')
             if result != 'OK':
                 self.logger.warning("Нет писем в папке")
                 self.disconnect()
-                return True, []  # Пустой список, но без ошибки!
+                return True, "", []
             
             backups = []
             for num in data[0].split():
@@ -247,12 +221,12 @@ class CloudStorage:
             
             self.disconnect()
             self.logger.info(f"Найдено {len(backups)} бэкапов")
-            return True, backups  # <-- ВОЗВРАЩАЕМ True И СПИСОК
+            return True, "", backups  # <-- ВОЗВРАЩАЕМ True И СПИСОК
             
         except Exception as e:
             self.logger.error(f"Ошибка при получении списка: {str(e)}")
             self.disconnect()
-            return False, str(e)  # <-- ВОЗВРАЩАЕМ СТРОКУ С ОШИБКОЙ
+            return False, str(e), None  # <-- ВОЗВРАЩАЕМ СТРОКУ С ОШИБКОЙ
     
     def download_backup(self, email, password, backup_id, folder='GameVault_Backups'):
         """Скачивание бэкапа из облака"""
@@ -262,7 +236,7 @@ class CloudStorage:
             success, msg = self.connect_imap(email, password)
             if not success:
                 self.logger.error(f"Ошибка подключения: {msg}")
-                return False, None
+                return False, "", None
             
             self.mail.select(folder)
             result, data = self.mail.fetch(backup_id, '(RFC822)')
@@ -270,7 +244,7 @@ class CloudStorage:
             if result != 'OK':
                 self.logger.error(f"Не удалось получить письмо {backup_id}")
                 self.disconnect()
-                return False, None
+                return False, "", None
             
             message = email.message_from_bytes(data[0][1])
             
@@ -290,16 +264,16 @@ class CloudStorage:
                         
                         self.disconnect()
                         self.logger.info(f"Бэкап сохранен как {local_path}")
-                        return True, local_path
+                        return True, "", local_path
             
             self.disconnect()
             self.logger.warning(f"В письме {backup_id} не найдено вложение")
-            return False, None
+            return False, "", None
             
         except Exception as e:
             self.logger.error(f"Ошибка при скачивании: {str(e)}")
             self.disconnect()
-            return False, None
+            return False, "", None
     
     def delete_backup(self, email, password, backup_id, folder='GameVault_Backups'):
         """Удаление бэкапа из облака"""
@@ -309,7 +283,7 @@ class CloudStorage:
             success, msg = self.connect_imap(email, password)
             if not success:
                 self.logger.error(f"Ошибка подключения: {msg}")
-                return False, msg
+                return False, msg, None
             
             self.mail.select(folder)
             self.mail.store(backup_id, '+FLAGS', '\\Deleted')
@@ -317,12 +291,12 @@ class CloudStorage:
             
             self.disconnect()
             self.logger.info("Бэкап успешно удален")
-            return True, "Бэкап удален"
+            return True, "Бэкап удален", None
             
         except Exception as e:
             self.logger.error(f"Ошибка при удалении: {str(e)}")
             self.disconnect()
-            return False, str(e)
+            return False, str(e), None
     
     def test_connection(self, email, password):
         """Тест подключения к облаку"""

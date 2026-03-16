@@ -1,8 +1,8 @@
 # gui/settings.py
 import logging
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                             QLineEdit, QPushButton, QMessageBox, QGroupBox)
-from PyQt6.QtCore import Qt
+from PyQt5.QtCore import Qt
 from core.email_sender import EmailSender
 from .cloud_backups import CloudBackupsDialog
 from .password_dialog import PasswordDialog
@@ -182,70 +182,9 @@ class SettingsDialog(QDialog):
             self.update_cloud_status()
     
     def change_master_password(self):
-        """Смена мастер-пароля"""
-        # Запрашиваем старый пароль
-        old_dialog = PasswordDialog("Введите старый мастер-пароль:", self)
-        if not old_dialog.exec():
-            return
-        old_password = old_dialog.get_password()
-        
-        # Проверяем старый пароль
-        try:
-            success, _ = self.database.load_data(old_password)
-            if not success:
-                QMessageBox.warning(self, "Ошибка", "Неверный пароль!")
-                return
-        except:
-            QMessageBox.warning(self, "Ошибка", "Неверный пароль!")
-            return
-        
-        # Запрашиваем новый пароль
-        new_dialog = PasswordDialog("Введите новый мастер-пароль:", self, is_new=True)
-        if new_dialog.exec():
-            new_password = new_dialog.get_password()
-            
-            # Сохраняем старые данные
-            old_data = self.database.data
-            old_config = self.database.config.copy()
-            
-            # Создаем новое хранилище
-            success, msg = self.database.create_new_vault(
-                new_password,
-                old_config.get('email')
-            )
-            
-            if success:
-                # Восстанавливаем данные
-                self.database.data = old_data
-                self.database.config = old_config
-                
-                # Перешифровываем пароль от почты если есть
-                if 'email_password' in self.config:
-                    email_password = self.database.crypto.decrypt_password(
-                        self.config['email_password']
-                    )
-                    if email_password:
-                        self.config['email_password'] = self.database.crypto.encrypt_password(
-                            email_password
-                        )
-                
-                # Перешифровываем облачные пароли если есть
-                if 'cloud' in self.config and 'password' in self.config['cloud']:
-                    cloud_password = self.database.crypto.decrypt_password(
-                        self.config['cloud']['password']
-                    )
-                    if cloud_password:
-                        self.config['cloud']['password'] = self.database.crypto.encrypt_password(
-                            cloud_password
-                        )
-                
-                self.database.save_data()
-                self.database.save_config()
-                
-                QMessageBox.information(self, "Успех", "Мастер-пароль изменен!")
-            else:
-                QMessageBox.warning(self, "Ошибка", msg)
-    
+        """Временно недоступно."""
+        QMessageBox.information(self, "В разработке", "Функция смены мастер-пароля будет доступна в следующей версии.")
+        return
     def save_settings(self):
         """Сохранение настроек"""
         email = self.email_input.text().strip()

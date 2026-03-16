@@ -1,8 +1,9 @@
 # gui/add_account.py
 import logging
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                             QLineEdit, QPushButton, QComboBox, QMessageBox)
-from PyQt6.QtCore import Qt
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon  # для возможных иконок
 from core.crypto import CryptoManager
 
 logger = logging.getLogger('GameVault.GUI.AddAccount')
@@ -19,20 +20,31 @@ class AddAccountDialog(QDialog):
         
     def init_ui(self):
         self.setWindowTitle("Добавление аккаунта" if not self.account else "Редактирование аккаунта")
-        self.setFixedSize(500, 450)
+        self.setFixedSize(550, 500)
         
         layout = QVBoxLayout()
         layout.setSpacing(10)
         layout.setContentsMargins(20, 20, 20, 20)
         
+        # Платформа
+        layout.addWidget(QLabel("Платформа:"))
+        self.platform_combo = QComboBox()
+        self.platform_combo.addItems(["Steam", "Xbox", "PlayStation", "Epic Games", "Uplay", "Origin", "Battle.net", "Другое"])
+        # Устанавливаем сохранённое значение, если есть
+        current_platform = self.account.get('platform', '')
+        index = self.platform_combo.findText(current_platform)
+        if index >= 0:
+            self.platform_combo.setCurrentIndex(index)
+        layout.addWidget(self.platform_combo)
+        
         # Игра
         layout.addWidget(QLabel("Название игры:"))
         self.game_input = QLineEdit()
         self.game_input.setText(self.account.get('game', ''))
-        self.game_input.setPlaceholderText("Например: World of Warcraft")
+        self.game_input.setPlaceholderText("Например: Cyberpunk 2077")
         layout.addWidget(self.game_input)
         
-        # Логин
+        # Логин/Email
         layout.addWidget(QLabel("Логин/Email:"))
         self.login_input = QLineEdit()
         self.login_input.setText(self.account.get('login', ''))
@@ -47,12 +59,13 @@ class AddAccountDialog(QDialog):
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
         password_layout.addWidget(self.password_input)
         
-        self.show_password_btn = QPushButton("👁")
-        self.show_password_btn.setFixedSize(30, 30)
+        # Кнопка показа пароля (с текстом вместо символа)
+        self.show_password_btn = QPushButton("👁️ Показать")  # Добавлен текст
         self.show_password_btn.setCheckable(True)
         self.show_password_btn.toggled.connect(self.toggle_password_visibility)
         password_layout.addWidget(self.show_password_btn)
         
+        # Кнопка генерации пароля
         self.generate_btn = QPushButton("🎲 Сгенерировать")
         self.generate_btn.clicked.connect(self.generate_password)
         password_layout.addWidget(self.generate_btn)
@@ -98,8 +111,10 @@ class AddAccountDialog(QDialog):
         """Показать/скрыть пароль"""
         if checked:
             self.password_input.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.show_password_btn.setText("👁️ Скрыть")
         else:
             self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+            self.show_password_btn.setText("👁️ Показать")
     
     def generate_password(self):
         """Генерация пароля"""
@@ -107,6 +122,7 @@ class AddAccountDialog(QDialog):
         self.password_input.setText(password)
         self.password_input.setEchoMode(QLineEdit.EchoMode.Normal)
         self.show_password_btn.setChecked(True)
+        self.show_password_btn.setText("👁️ Скрыть")
         QMessageBox.information(self, "Пароль сгенерирован", 
                                f"Пароль: {password}\n\nСкопируйте его сейчас!")
         logger.info("Сгенерирован новый пароль")
@@ -114,6 +130,7 @@ class AddAccountDialog(QDialog):
     def get_account(self):
         """Получить данные аккаунта"""
         return {
+            'platform': self.platform_combo.currentText(),
             'game': self.game_input.text().strip(),
             'login': self.login_input.text().strip(),
             'password': self.password_input.text().strip(),
